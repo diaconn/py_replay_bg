@@ -34,17 +34,26 @@ def twin_multi_meal(tsteps, x,
                     logGb_r2, log60_r2, risk_coeff, k1, k2, kd_fac,
                     r2, kempt, kd, ka2, ke, p2, SI_B, SI_L, SI_D, VI, VG, Ipb, SG, Gb,
                     f, kabs_B, kabs_L, kabs_D, kabs_S, kabs_H, alpha, previous_Ra):
+    # [diaconn-perf] Same arithmetic as model_step_equations_multi_meal, but the state is integrated in a
+    # single contiguous (tsteps, nx) buffer instead of allocating a new state vector at every step.
+    nx = x.shape[0]
+    xt = np.empty((tsteps, nx))
+    for i in range(nx):
+        xt[0, i] = x[i, 0]
     # Run simulation
-    for k in np.arange(1, tsteps):
+    for k in range(1, tsteps):
         # Integration step
-        x[:, k] = model_step_equations_multi_meal(bolus_delayed[k] + basal_delayed[k],
-                                                  meal_B_delayed[k], meal_L_delayed[k], meal_D_delayed[k],
-                                                  meal_S_delayed[k], meal_H[k], t_hour[k], x[:, k - 1],
-                                                  logGb_r2, log60_r2, risk_coeff, k1, k2, kd_fac,
-                                                  r2, kempt, kd, ka2, ke,
-                                                  p2, SI_B, SI_L, SI_D, VI, VG, Ipb, SG, Gb,
-                                                  f, kabs_B, kabs_L, kabs_D, kabs_S, kabs_H, alpha,
-                                                  previous_Ra[k], 0, 0, 0)
+        _step_multi_meal_into(xt[k], xt[k - 1], bolus_delayed[k] + basal_delayed[k],
+                              meal_B_delayed[k], meal_L_delayed[k], meal_D_delayed[k],
+                              meal_S_delayed[k], meal_H[k], t_hour[k],
+                              logGb_r2, log60_r2, risk_coeff, k1, k2, kd_fac,
+                              r2, kempt, kd, ka2, ke,
+                              p2, SI_B, SI_L, SI_D, VI, VG, Ipb, SG, Gb,
+                              f, kabs_B, kabs_L, kabs_D, kabs_S, kabs_H, alpha,
+                              previous_Ra[k], 0, 0, 0)
+    for k in range(1, tsteps):
+        for i in range(nx):
+            x[i, k] = xt[k, i]
 
     return x
 
@@ -112,14 +121,14 @@ def model_step_equations_single_meal(I, cho, hour_of_the_day, xkm1,
 
 
 @njit(fastmath=True, cache=True)
-def model_step_equations_multi_meal(I, cho_b, cho_l, cho_d, cho_s, cho_h, hour_of_the_day, xkm1,
+def _step_multi_meal_into(xk, xkm1, I, cho_b, cho_l, cho_d, cho_s, cho_h, hour_of_the_day,
                                     logGb_r2, log60_r2, risk_coeff, k1, k2, kd_fac,
                                     r2, kempt, kd, ka2, ke, p2, SI_B, SI_L, SI_D, VI, VG, Ipb, SG, Gb,
                                     f, kabs_B, kabs_L, kabs_D, kabs_S, kabs_H, alpha, previous_Ra, custom_forcing_Ra, forcing_ip, forcing_ra):
     """
-    Internal function that simulates a step of the multi-meal model using backward-euler method.
+    [diaconn-perf] Body of model_step_equations_multi_meal writing the new state into `xk` (every element is
+    overwritten) instead of returning a fresh copy of `xkm1`. Arithmetic is unchanged.
     """
-    xk = xkm1.copy()
 
     # Set the insulin sensitivity based on the time of the day
     if hour_of_the_day < 4 or hour_of_the_day >= 17:
@@ -174,6 +183,21 @@ def model_step_equations_multi_meal(I, cho_b, cho_l, cho_d, cho_s, cho_h, hour_o
         16] + previous_Ra + custom_forcing_Ra + forcing_ra) / VG) / (1 + SG + risk * xk[1])
     xk[20] = (alpha * xkm1[20] + xk[0]) / (1 + alpha)
 
+
+@njit(fastmath=True, cache=True)
+def model_step_equations_multi_meal(I, cho_b, cho_l, cho_d, cho_s, cho_h, hour_of_the_day, xkm1,
+                                    logGb_r2, log60_r2, risk_coeff, k1, k2, kd_fac,
+                                    r2, kempt, kd, ka2, ke, p2, SI_B, SI_L, SI_D, VI, VG, Ipb, SG, Gb,
+                                    f, kabs_B, kabs_L, kabs_D, kabs_S, kabs_H, alpha, previous_Ra, custom_forcing_Ra, forcing_ip, forcing_ra):
+    """
+    Internal function that simulates a step of the multi-meal model using backward-euler method.
+    """
+    xk = xkm1.copy()
+    _step_multi_meal_into(xk, xkm1, I, cho_b, cho_l, cho_d, cho_s, cho_h, hour_of_the_day,
+                          logGb_r2, log60_r2, risk_coeff, k1, k2, kd_fac,
+                          r2, kempt, kd, ka2, ke, p2, SI_B, SI_L, SI_D, VI, VG, Ipb, SG, Gb,
+                          f, kabs_B, kabs_L, kabs_D, kabs_S, kabs_H, alpha, previous_Ra, custom_forcing_Ra, forcing_ip,
+                          forcing_ra)
     return xk
 
 @njit(fastmath=True, cache=True)

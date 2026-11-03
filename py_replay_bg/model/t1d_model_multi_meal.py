@@ -493,16 +493,22 @@ class T1DModelMultiMeal:
         is_replay = modality == 'replay'
 
         # Make copies of the inputs if replay to avoid to overwrite fields
-        bolus = rbg_data.bolus * 1
-        basal = rbg_data.basal * 1
-        meal = rbg_data.meal * 1
-        meal_type = copy.copy(rbg_data.meal_type)
-        meal_announcement = rbg_data.meal_announcement * 1
-        correction_bolus = bolus * 0
-        hypotreatments = meal * 0
+        if is_replay:
+            bolus = rbg_data.bolus * 1
+            basal = rbg_data.basal * 1
+            meal = rbg_data.meal * 1
+            meal_type = copy.copy(rbg_data.meal_type)
+            meal_announcement = rbg_data.meal_announcement * 1
+            correction_bolus = bolus * 0
+            hypotreatments = meal * 0
 
-        forcing_ip = bolus * 0
-        forcing_ra = hypotreatments * 0
+            forcing_ip = bolus * 0
+            forcing_ra = hypotreatments * 0
+        else:
+            # [diaconn-perf] Twinning only reads the delayed input vectors below (np.append already copies), so
+            # the per-evaluation copies of the replay-only event vectors are skipped.
+            bolus = rbg_data.bolus
+            basal = rbg_data.basal
 
         # Shift the insulin vectors according to the delays
         bolus_delayed = np.append(np.zeros(shape=(mp.tau.__trunc__(),)), bolus)
@@ -514,7 +520,8 @@ class T1DModelMultiMeal:
         meal_D_delayed = np.append(np.zeros(shape=(mp.beta_D.__trunc__(),)), rbg_data.meal_D)
         meal_S_delayed = np.append(np.zeros(shape=(mp.beta_S.__trunc__(),)), rbg_data.meal_S)
 
-        meal_H = rbg_data.meal_H * 1
+        # [diaconn-perf] The twinning kernels only read meal_H; replay may add hypotreatments to it, so copy there
+        meal_H = rbg_data.meal_H * 1 if is_replay else rbg_data.meal_H
 
         # If using the extended model, shift also the meal vectors of the second day
         if self.extended:
