@@ -198,7 +198,9 @@ class MAP:
             best = -1
 
             # Get results (verbosity not allowed for the moment)
-            results = pool.starmap(run_map, args)
+            # [diaconn-perf] chunksize=1: restarts differ a lot in run time, so hand them out one by one to keep
+            # every process busy until the end (results keep their order, so the selected best is unchanged)
+            results = pool.starmap(run_map, args, chunksize=1)
 
             # Get best
             for r, result in enumerate(results):

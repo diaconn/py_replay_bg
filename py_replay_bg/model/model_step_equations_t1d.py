@@ -34,16 +34,16 @@ def twin_multi_meal(tsteps, x,
                     logGb_r2, log60_r2, risk_coeff, k1, k2, kd_fac,
                     r2, kempt, kd, ka2, ke, p2, SI_B, SI_L, SI_D, VI, VG, Ipb, SG, Gb,
                     f, kabs_B, kabs_L, kabs_D, kabs_S, kabs_H, alpha, previous_Ra):
-    # [diaconn-perf] Same arithmetic as model_step_equations_multi_meal, but the state is integrated in a
-    # single contiguous (tsteps, nx) buffer instead of allocating a new state vector at every step.
+    # [diaconn-perf] Same arithmetic as model_step_equations_multi_meal, but the previous and current states live
+    # in two small buffers allocated once, instead of a new state vector at every step, and only the glucose row
+    # of x is written.
     nx = x.shape[0]
-    xt = np.empty((tsteps, nx))
-    for i in range(nx):
-        xt[0, i] = x[i, 0]
+    prev = x[:, 0].copy()
+    cur = np.empty(nx)
     # Run simulation
     for k in range(1, tsteps):
         # Integration step
-        _step_multi_meal_into(xt[k], xt[k - 1], bolus_delayed[k] + basal_delayed[k],
+        _step_multi_meal_into(cur, prev, bolus_delayed[k] + basal_delayed[k],
                               meal_B_delayed[k], meal_L_delayed[k], meal_D_delayed[k],
                               meal_S_delayed[k], meal_H[k], t_hour[k],
                               logGb_r2, log60_r2, risk_coeff, k1, k2, kd_fac,
@@ -51,9 +51,10 @@ def twin_multi_meal(tsteps, x,
                               p2, SI_B, SI_L, SI_D, VI, VG, Ipb, SG, Gb,
                               f, kabs_B, kabs_L, kabs_D, kabs_S, kabs_H, alpha,
                               previous_Ra[k], 0, 0, 0)
-    for k in range(1, tsteps):
-        for i in range(nx):
-            x[i, k] = xt[k, i]
+        # Twinning only reads the last state (interstitial glucose) of the trajectory, see
+        # T1DModelMultiMeal.simulate(modality='twinning'); the full trajectory is recomputed by replay.
+        x[nx - 1, k] = cur[nx - 1]
+        prev, cur = cur, prev
 
     return x
 
